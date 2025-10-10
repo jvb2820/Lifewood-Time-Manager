@@ -5,6 +5,7 @@ import SummaryCards from './SummaryCards';
 import HistoryTable from './HistoryTable';
 import DateFilter from './DateFilter';
 import RealTimeClock from './RealTimeClock';
+import IdleAlarm from './IdleAlarm';
 import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
@@ -286,6 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           )}
         </div>
       </main>
+      <IdleAlarm isActive={isClockedIn} />
     </div>
   );
 };

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
-import ClockButtons from './ClockButtons';
 import SummaryCards from './SummaryCards';
 import HistoryTable from './HistoryTable';
 import DateFilter from './DateFilter';
+import RealTimeClock from './RealTimeClock';
 import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
@@ -68,6 +68,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           setElapsedTime(formatSecondsToHHMMSS(durationSeconds));
         }, 1000);
       }
+    } else {
+        setElapsedTime(null);
     }
     
     return () => {
@@ -236,13 +238,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       <Header />
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-8">
-          <ClockButtons 
-            user={user} 
-            isClockedIn={isClockedIn} 
-            onUpdate={fetchAttendanceData}
-            elapsedTime={elapsedTime}
-          />
-
+          
           {error && <div className="p-4 text-center text-red-700 bg-red-100 border border-red-200 rounded-lg">{error}</div>}
 
           {isLoading ? (
@@ -251,7 +247,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
              </div>
           ) : (
             <>
-              <SummaryCards records={records} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                  <div className="lg:col-span-2">
+                    <SummaryCards records={records} />
+                  </div>
+                  <div className="lg:col-span-1">
+                     <RealTimeClock elapsedTime={elapsedTime} />
+                  </div>
+              </div>
 
               <DateFilter 
                 selectedDate={filterDate}
@@ -272,8 +275,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                      </div>
                 </div>
               )}
-
-              <HistoryTable records={filteredRecords} />
+              
+              <HistoryTable 
+                records={filteredRecords} 
+                user={user}
+                isClockedIn={isClockedIn}
+                onUpdate={fetchAttendanceData}
+              />
             </>
           )}
         </div>

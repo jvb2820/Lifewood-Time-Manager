@@ -1,11 +1,15 @@
 import React from 'react';
-import type { AttendanceRecord } from '../types';
+import type { AttendanceRecord, User } from '../types';
+import ClockButtons from './ClockButtons';
 
 interface HistoryTableProps {
   records: AttendanceRecord[];
+  user: User;
+  isClockedIn: boolean;
+  onUpdate: () => void;
 }
 
-const HistoryTable: React.FC<HistoryTableProps> = ({ records }) => {
+const HistoryTable: React.FC<HistoryTableProps> = ({ records, user, isClockedIn, onUpdate }) => {
 
   const formatDisplayTime = (dateString: string | null) => {
     if (!dateString) return 'N/A';
@@ -37,7 +41,15 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ records }) => {
 
   return (
     <div className="bg-white p-4 sm:p-6 rounded-xl border border-border-color shadow-sm">
-      <h2 className="text-xl font-semibold text-text-primary mb-4">Attendance History</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <h2 className="text-xl font-semibold text-text-primary">Attendance History</h2>
+        <ClockButtons 
+            user={user} 
+            isClockedIn={isClockedIn} 
+            onUpdate={onUpdate}
+        />
+      </div>
+
       <div className="overflow-x-auto">
         {records.length > 0 ? (
           <table className="min-w-full divide-y divide-border-color">

@@ -1,0 +1,5 @@
+{
+  "name": "LifeTime",
+  "description": "LifeTime: Lifewood Time Manager is a web application for users to clock in, clock out, and view their attendance history and time summaries. Integrated with Supabase for backend data storage.",
+  "requestFramePermissions": []
+}

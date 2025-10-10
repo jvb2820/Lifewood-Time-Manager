@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
 import ClockButtons from './ClockButtons';
 import SummaryCards from './SummaryCards';
 import HistoryTable from './HistoryTable';
-import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration } from '../utils/time';
+import DateFilter from './DateFilter';
+import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
   user: User;
@@ -18,6 +19,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
 
   const fetchAttendanceData = useCallback(async () => {
     setIsLoading(true);
@@ -181,6 +183,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  const filteredRecords = useMemo(() => {
+    if (!filterDate) { // filterDate is 'YYYY-MM-DD'
+      return records;
+    }
+
+    // Construct a date range for the selected day in the user's local timezone
+    // to avoid timezone-related issues.
+    const [year, month, day] = filterDate.split('-').map(Number);
+    
+    // Month is 0-indexed in JS Date constructor (0-11)
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    return records.filter(record => {
+      const recordDate = new Date(record.clock_in);
+      return recordDate >= startOfDay && recordDate <= endOfDay;
+    });
+  }, [records, filterDate]);
+
+  const filteredDateSummary = useMemo(() => {
+    if (!filterDate) return null;
+
+    const totalMinutes = filteredRecords.reduce((acc, record) => {
+      return acc + parseDurationToMinutes(record.total_time);
+    }, 0);
+
+    return formatMinutesToHoursMinutes(totalMinutes);
+  }, [filteredRecords, filterDate]);
 
   const Header = () => (
     <header className="flex items-center justify-between p-4 bg-white border-b border-border-color shadow-sm sticky top-0 z-10">
@@ -222,7 +252,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           ) : (
             <>
               <SummaryCards records={records} />
-              <HistoryTable records={records} />
+
+              <DateFilter 
+                selectedDate={filterDate}
+                onDateChange={setFilterDate}
+                onClear={() => setFilterDate('')}
+              />
+
+              {filterDate && (
+                <div className="bg-white p-6 rounded-xl border border-primary-hover shadow-lg flex items-center space-x-4">
+                     <div className="p-3 rounded-full bg-icon-bg">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                     </div>
+                     <div>
+                        <p className="text-text-secondary text-sm">
+                            Total time for {new Date(filterDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}
+                        </p>
+                        <p className="text-2xl font-bold text-text-primary">{filteredDateSummary}</p>
+                     </div>
+                </div>
+              )}
+
+              <HistoryTable records={filteredRecords} />
             </>
           )}
         </div>

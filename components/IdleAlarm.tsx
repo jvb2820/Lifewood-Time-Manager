@@ -253,7 +253,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
                     Are you still there?
                   </h2>
                   <p className="mt-2 text-text-secondary">
-                    Click "Snooze" to confirm you're still working.
+                    Click "I'm Here" to confirm you're still working.
                   </p>
                 </>
               ) : (
@@ -277,7 +277,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
                   onClick={handleSnooze}
                   className="w-full sm:w-auto inline-flex justify-center rounded-md border border-transparent bg-primary px-8 py-3 text-base font-bold text-white shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-transform transform hover:scale-105"
                 >
-                  Snooze
+                  I'm Here
                 </button>
               </div>
             </div>

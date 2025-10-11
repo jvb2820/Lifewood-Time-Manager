@@ -25,41 +25,87 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const soundIntervalRef = useRef<number | null>(null);
 
   // Function to play a ringing sound
-  const playRingingSound = () => {
+  const playRingingSound = async () => {
     try {
+      // If context doesn't exist or is suspended, create/resume it
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
+      
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
 
       const context = audioContextRef.current;
-      const oscillator = context.createOscillator();
-      const gainNode = context.createGain();
+      
+      // Create a more distinctive dual-tone ring (like a phone)
+      const createTone = (frequency: number) => {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        
+        osc.connect(gain);
+        gain.connect(context.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(frequency, context.currentTime);
+        
+        // Create a more phone-like envelope
+        gain.gain.setValueAtTime(0, context.currentTime);
+        gain.gain.linearRampToValueAtTime(0.15, context.currentTime + 0.1);
+        gain.gain.linearRampToValueAtTime(0.15, context.currentTime + 0.3);
+        gain.gain.linearRampToValueAtTime(0, context.currentTime + 0.4);
+        
+        osc.start(context.currentTime);
+        osc.stop(context.currentTime + 0.4);
+        
+        return { oscillator: osc, gainNode: gain };
+      };
 
-      oscillator.connect(gainNode);
-      gainNode.connect(context.destination);
+      // Create two tones for a more traditional ring sound
+      const tone1 = createTone(1550);
+      const tone2 = createTone(1900);
 
-      // Create a ringing sound (higher frequency)
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(1500, context.currentTime);
+      // Cleanup after the sound plays
+      setTimeout(() => {
+        tone1.gainNode.disconnect();
+        tone2.gainNode.disconnect();
+      }, 500);
 
-      // Create a ringing envelope
-      gainNode.gain.setValueAtTime(0, context.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, context.currentTime + 0.1);
-      gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.3);
-
-      oscillator.start(context.currentTime);
-      oscillator.stop(context.currentTime + 0.3);
     } catch (error) {
       console.error('Error playing sound:', error);
+      // Try alternative simpler sound if the first attempt fails
+      try {
+        const simpleContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = simpleContext.createOscillator();
+        osc.connect(simpleContext.destination);
+        osc.start(0);
+        osc.stop(0.1);
+      } catch (fallbackError) {
+        console.error('Fallback sound also failed:', fallbackError);
+      }
     }
   };
 
   // Function to start repeating ring
-  const startRepeatingRing = () => {
-    // Play immediately
-    playRingingSound();
-    // Then repeat every 2 seconds
-    soundIntervalRef.current = window.setInterval(playRingingSound, 2000);
+  const startRepeatingRing = async () => {
+    // Ensure we have user interaction first
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      // Resume the audio context if it's suspended
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      
+      // Play the first sound
+      await playRingingSound();
+      
+      // Then set up the interval
+      soundIntervalRef.current = window.setInterval(playRingingSound, 2000);
+    } catch (error) {
+      console.error('Error starting ring sequence:', error);
+    }
   };
 
   // Function to stop repeating ring
@@ -68,9 +114,13 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
       clearInterval(soundIntervalRef.current);
       soundIntervalRef.current = null;
     }
+    // Don't close the audio context, just disconnect any active nodes
     if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
+      const destination = audioContextRef.current.destination;
+      // Disconnect all nodes connected to the destination
+      if (typeof destination.disconnect === 'function') {
+        destination.disconnect();
+      }
     }
   };
 
@@ -107,8 +157,16 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
       setShowPopup(true);
       showNotification(); // Show notification with stock sound
 
-      snoozeTimeoutRef.current = window.setTimeout(() => {
+      snoozeTimeoutRef.current = window.setTimeout(async () => {
         setIsIdle(true);
+        // Try to start the audio context with user interaction
+        if (audioContextRef.current?.state === 'suspended') {
+          try {
+            await audioContextRef.current.resume();
+          } catch (error) {
+            console.error('Failed to resume audio context:', error);
+          }
+        }
         startRepeatingRing(); // Start the ringing sound when user becomes idle
       }, SNOOZE_WINDOW_MS);
     }, ALARM_INTERVAL_MS);

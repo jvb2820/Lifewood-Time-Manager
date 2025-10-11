@@ -174,5 +174,4 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
     </>
   );
 };
-
 export default IdleAlarm;

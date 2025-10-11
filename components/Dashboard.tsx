@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -19,7 +20,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
-  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
 
   const fetchAttendanceData = useCallback(async () => {
@@ -94,31 +95,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        // Supabase connection details are hardcoded for this fire-and-forget request.
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
-        // To ensure the request is authenticated and can pass RLS policies,
-        // we need to retrieve the user's access token from localStorage.
-        const sessionKey = 'sb-szifmsvutxcrcwfjbvsi-auth-token';
-        const sessionDataString = localStorage.getItem(sessionKey);
-        let accessToken = supabaseAnonKey; // Fallback to anon key
-
-        if (sessionDataString) {
-          try {
-            const sessionData = JSON.parse(sessionDataString);
-            if (sessionData && sessionData.access_token) {
-              accessToken = sessionData.access_token;
-            }
-          } catch (e) {
-            console.error("Error parsing Supabase session from localStorage.", e);
-          }
-        }
-        
         const headers = {
           'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${accessToken}`, // Use the authenticated user's token
+          'Authorization': `Bearer ${supabaseAnonKey}`, // Use anon key
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
         };
@@ -146,8 +129,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [isClockedIn, records]);
 
   const handleSignOut = async () => {
-    setIsSigningOut(true);
+    setIsLoggingOut(true);
     setError(null);
+
+    const performSignOut = () => {
+      onLogout();
+    };
 
     if (isClockedIn) {
       const openRecord = records.find(r => r.clock_out === null);
@@ -164,25 +151,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             })
             .eq('id', openRecord.id);
 
-          if (updateError) {
-            throw updateError; // Propagate error to the catch block
-          }
-          // If clock-out is successful, proceed to logout.
-          onLogout();
+          if (updateError) throw updateError;
+          performSignOut();
 
         } catch (error) {
           console.error("Failed to clock out during sign out:", error);
           setError("Could not clock you out. Please check your connection and try again.");
-          setIsSigningOut(false); // Allow user to try again
+          setIsLoggingOut(false);
         }
       } else {
-        // This is an inconsistent state, but we should let the user log out.
-        console.warn("isClockedIn is true, but no open record was found. Logging out anyway.");
-        onLogout();
+        console.warn("isClockedIn is true, but no open record was found. Signing out anyway.");
+        performSignOut();
       }
     } else {
-      // Not clocked in, so just log out.
-      onLogout();
+      performSignOut();
     }
   };
 
@@ -226,10 +208,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </div>
       <button
         onClick={handleSignOut}
-        disabled={isSigningOut}
+        disabled={isLoggingOut}
         className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-50"
       >
-        {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+        {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
       </button>
     </header>
   );

@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from './services/supabaseClient';
 import type { User } from './types';
 import SignIn from './components/SignIn';
 import Dashboard from './components/Dashboard';
@@ -10,27 +9,34 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const sessionUser = localStorage.getItem('timeTrackerUser');
-    if (sessionUser) {
-      setUser(JSON.parse(sessionUser));
+    setLoading(true);
+    try {
+      const storedUser = localStorage.getItem('lifetime-user');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error("Failed to parse user from localStorage", error);
+      localStorage.removeItem('lifetime-user');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const handleLogin = (loggedInUser: User) => {
-    localStorage.setItem('timeTrackerUser', JSON.stringify(loggedInUser));
     setUser(loggedInUser);
+    localStorage.setItem('lifetime-user', JSON.stringify(loggedInUser));
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('timeTrackerUser');
     setUser(null);
+    localStorage.removeItem('lifetime-user');
   };
   
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="w-16 h-16 border-4 border-saffaron border-dashed rounded-full animate-spin"></div>
+        <div className="w-16 h-16 border-4 border-accent border-dashed rounded-full animate-spin"></div>
       </div>
     );
   }

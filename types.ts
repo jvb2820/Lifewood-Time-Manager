@@ -4,6 +4,7 @@ export interface User {
   userid: string;
   name: string;
   role: string;
+  password?: string; // Added for sign-in check
 }
 
 export interface AttendanceRecord {

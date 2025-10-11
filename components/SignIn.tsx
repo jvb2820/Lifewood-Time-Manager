@@ -7,7 +7,8 @@ interface SignInProps {
 }
 
 const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
+  const [userid, setUserid] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -16,8 +17,8 @@ const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     setError(null);
     setIsLoading(true);
 
-    if (!username.trim()) {
-      setError('Username cannot be empty.');
+    if (!userid.trim() || !password.trim()) {
+      setError('User ID and password cannot be empty.');
       setIsLoading(false);
       return;
     }
@@ -26,16 +27,38 @@ const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
       const { data, error: dbError } = await supabase
         .from('users')
         .select('*')
-        .eq('userid', username.trim())
+        .eq('userid', userid.trim())
         .single();
 
-      if (dbError || !data) {
-        setError('User not found. Please contact your administrator.');
+      if (dbError) {
+        // Supabase's .single() throws an error if no user is found (code PGRST116).
+        // This is an expected failure for a wrong userid, not a system error.
+        // We'll show the generic login error message without logging a console error.
+        if (dbError.code !== 'PGRST116') {
+          // Log other, unexpected database errors.
+          console.error('Sign-in database error:', dbError);
+        }
+        setError('Invalid User ID or Password.');
+        setIsLoading(false);
         return;
       }
-      
-      onLogin(data as User);
 
+      if (!data) {
+        // This is a fallback, as .single() should have already thrown an error.
+        setError('Invalid User ID or Password.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (data.password === password) {
+        // Successful login
+        // Exclude password from the user object stored in app state/localStorage
+        const { password: _, ...loggedInUser } = data;
+        onLogin(loggedInUser);
+      } else {
+        // Incorrect password
+        setError('Invalid User ID or Password.');
+      }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -52,17 +75,33 @@ const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
       <div className="w-full max-w-sm p-8 space-y-6 bg-white rounded-xl shadow-lg border border-border-color">
         <form onSubmit={handleSignIn} className="space-y-6">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-text-secondary mb-1">
-              Username
+            <label htmlFor="userid" className="block text-sm font-medium text-text-secondary mb-1">
+              User ID
             </label>
             <input
-              id="username"
-              name="username"
+              id="userid"
+              name="userid"
               type="text"
               autoComplete="username"
               required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={userid}
+              onChange={(e) => setUserid(e.target.value)}
+              className="w-full px-4 py-3 bg-input-bg border border-border-color rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-text-secondary mb-1">
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 bg-input-bg border border-border-color rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
             />
           </div>

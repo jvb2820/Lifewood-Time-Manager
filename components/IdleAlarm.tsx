@@ -21,6 +21,58 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const snoozeTimeoutRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const notificationRef = useRef<Notification | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const soundIntervalRef = useRef<number | null>(null);
+
+  // Function to play a ringing sound
+  const playRingingSound = () => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      const context = audioContextRef.current;
+      const oscillator = context.createOscillator();
+      const gainNode = context.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(context.destination);
+
+      // Create a ringing sound (higher frequency)
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(1500, context.currentTime);
+
+      // Create a ringing envelope
+      gainNode.gain.setValueAtTime(0, context.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.3, context.currentTime + 0.1);
+      gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.3);
+
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.3);
+    } catch (error) {
+      console.error('Error playing sound:', error);
+    }
+  };
+
+  // Function to start repeating ring
+  const startRepeatingRing = () => {
+    // Play immediately
+    playRingingSound();
+    // Then repeat every 2 seconds
+    soundIntervalRef.current = window.setInterval(playRingingSound, 2000);
+  };
+
+  // Function to stop repeating ring
+  const stopRepeatingRing = () => {
+    if (soundIntervalRef.current) {
+      clearInterval(soundIntervalRef.current);
+      soundIntervalRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  };
 
   // Function to show notification with stock sound
   const showNotification = () => {
@@ -57,6 +109,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
       snoozeTimeoutRef.current = window.setTimeout(() => {
         setIsIdle(true);
+        startRepeatingRing(); // Start the ringing sound when user becomes idle
       }, SNOOZE_WINDOW_MS);
     }, ALARM_INTERVAL_MS);
   };
@@ -68,6 +121,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
       resetTimers();
       setShowPopup(false);
       setIsIdle(false);
+      stopRepeatingRing(); // Stop the ringing sound
       if (notificationRef.current) {
         notificationRef.current.close();
       }
@@ -104,6 +158,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
     if (notificationRef.current) {
       notificationRef.current.close();
     }
+    stopRepeatingRing(); // Stop the ringing sound
     startMainTimer();
   };
 

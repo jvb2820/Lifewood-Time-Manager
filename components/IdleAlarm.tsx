@@ -1,7 +1,13 @@
+
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../services/supabaseClient';
+import type { User } from '../types';
+import { formatDateForDB } from '../utils/time';
 
 interface IdleAlarmProps {
   isActive: boolean; // Control whether the alarm is running
+  user: User | null;
+  currentAttendanceId: string | null;
 }
 
 const ALARM_INTERVAL_MS = 60 * 1000; // 1 minute
@@ -12,10 +18,11 @@ if (typeof window !== 'undefined' && 'Notification' in window) {
   Notification.requestPermission();
 }
 
-const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
+const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendanceId }) => {
   const [showPopup, setShowPopup] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [idleTime, setIdleTime] = useState(0);
+  const [currentIdleRecordId, setCurrentIdleRecordId] = useState<string | null>(null);
 
   const mainTimerRef = useRef<number | null>(null);
   const snoozeTimeoutRef = useRef<number | null>(null);
@@ -159,13 +166,26 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
       snoozeTimeoutRef.current = window.setTimeout(async () => {
         setIsIdle(true);
-        // Try to start the audio context with user interaction
+        if (user && currentAttendanceId) {
+            const { data, error } = await supabase
+              .from('idle_time')
+              .insert({
+                user_id: user.userid,
+                attendance_id: currentAttendanceId,
+                idle_start: formatDateForDB(new Date()),
+              })
+              .select()
+              .single();
+
+            if (error) {
+                console.error("Failed to log idle start:", error);
+            } else if (data) {
+                setCurrentIdleRecordId(data.id);
+            }
+        }
+
         if (audioContextRef.current?.state === 'suspended') {
-          try {
-            await audioContextRef.current.resume();
-          } catch (error) {
-            console.error('Failed to resume audio context:', error);
-          }
+          try { await audioContextRef.current.resume(); } catch (e) { console.error('Failed to resume audio context:', e); }
         }
         startRepeatingRing(); // Start the ringing sound when user becomes idle
       }, SNOOZE_WINDOW_MS);
@@ -188,7 +208,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
     return () => {
       resetTimers();
     };
-  }, [isActive]);
+  }, [isActive, user, currentAttendanceId]);
   
   useEffect(() => {
     if (isIdle) {
@@ -210,7 +230,21 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
     };
   }, [isIdle]);
 
-  const handleSnooze = () => {
+  const handleSnooze = async () => {
+    if (isIdle && currentIdleRecordId) {
+        const { error } = await supabase
+            .from('idle_time')
+            .update({
+                idle_end: formatDateForDB(new Date()),
+                duration_seconds: idleTime,
+            })
+            .eq('id', currentIdleRecordId);
+        
+        if (error) {
+            console.error("Failed to update idle record:", error);
+        }
+        setCurrentIdleRecordId(null);
+    }
     setShowPopup(false);
     setIsIdle(false);
     if (notificationRef.current) {

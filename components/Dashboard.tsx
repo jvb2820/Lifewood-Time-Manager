@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import type { User, AttendanceRecord } from '../types';
+import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
 import SummaryCards from './SummaryCards';
 import HistoryTable from './HistoryTable';
+import IdleHistoryTable from './IdleHistoryTable';
 import DateFilter from './DateFilter';
 import RealTimeClock from './RealTimeClock';
 import IdleAlarm from './IdleAlarm';
+import ClockButtons from './ClockButtons';
 import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
@@ -16,36 +18,48 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [idleRecords, setIdleRecords] = useState<IdleRecord[]>([]);
   const [isClockedIn, setIsClockedIn] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
+  const [activeTab, setActiveTab] = useState<'attendance' | 'idle'>('attendance');
 
-  const fetchAttendanceData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('user_id', user.userid)
-        .order('created_at', { ascending: false });
-
-      if (dbError) throw dbError;
+      // Fetch both attendance and idle records concurrently
+      const [attendanceRes, idleRes] = await Promise.all([
+        supabase
+          .from('attendance')
+          .select('*')
+          .eq('user_id', user.userid)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('idle_time')
+          .select('*')
+          .eq('user_id', user.userid)
+          .order('created_at', { ascending: false }),
+      ]);
       
-      const safeData = data || [];
-      setRecords(safeData);
+      if (attendanceRes.error) throw attendanceRes.error;
+      if (idleRes.error) throw idleRes.error;
 
-      if (safeData.length > 0) {
-        const latestRecord = safeData[0];
+      const safeAttendanceData = attendanceRes.data || [];
+      setRecords(safeAttendanceData);
+      setIdleRecords(idleRes.data || []);
+
+      if (safeAttendanceData.length > 0) {
+        const latestRecord = safeAttendanceData[0];
         setIsClockedIn(latestRecord.clock_out === null);
       } else {
         setIsClockedIn(false);
       }
     } catch (err: any) {
-      setError('Failed to fetch attendance data. Please try again.');
+      setError('Failed to fetch data. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -53,8 +67,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [user.userid]);
 
   useEffect(() => {
-    fetchAttendanceData();
-  }, [fetchAttendanceData]);
+    fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -95,8 +109,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = 'https://szifmsvutxcrcwfjbvsi.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6aWZtc3Z1dHhjcmN3ZmpidnNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjcwNzEsImV4cCI6MjA3NTYwMzA3MX0.hvZKMI0NDQ8IdWaDonqmiyvQu-NkCN0nRHPjn0isoCA';
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
         const headers = {
@@ -172,12 +186,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     if (!filterDate) { // filterDate is 'YYYY-MM-DD'
       return records;
     }
-
-    // Construct a date range for the selected day in the user's local timezone
-    // to avoid timezone-related issues.
     const [year, month, day] = filterDate.split('-').map(Number);
-    
-    // Month is 0-indexed in JS Date constructor (0-11)
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
@@ -187,15 +196,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     });
   }, [records, filterDate]);
 
+  const filteredIdleRecords = useMemo(() => {
+    if (!filterDate) {
+      return idleRecords;
+    }
+    const [year, month, day] = filterDate.split('-').map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    return idleRecords.filter(record => {
+      const recordDate = new Date(record.idle_start);
+      return recordDate >= startOfDay && recordDate <= endOfDay;
+    });
+  }, [idleRecords, filterDate]);
+
+
   const filteredDateSummary = useMemo(() => {
     if (!filterDate) return null;
-
     const totalMinutes = filteredRecords.reduce((acc, record) => {
       return acc + parseDurationToMinutes(record.total_time);
     }, 0);
-
     return formatMinutesToHoursMinutes(totalMinutes);
   }, [filteredRecords, filterDate]);
+
+  const currentAttendanceId = useMemo(() => {
+    if (!isClockedIn) return null;
+    const openRecord = records.find(r => r.clock_out === null);
+    return openRecord ? openRecord.id : null;
+  }, [isClockedIn, records]);
 
   const Header = () => (
     <header className="flex items-center justify-between p-4 bg-white border-b border-border-color shadow-sm sticky top-0 z-10">
@@ -215,6 +243,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </button>
     </header>
   );
+
+  const TabButton: React.FC<{tabName: 'attendance' | 'idle', label: string}> = ({tabName, label}) => {
+    const isActive = activeTab === tabName;
+    return (
+        <button
+            onClick={() => setActiveTab(tabName)}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-md transition-colors focus:outline-none ${
+                isActive 
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+            aria-current={isActive ? 'page' : undefined}
+        >
+            {label}
+        </button>
+    )
+  }
 
   return (
     <div className="min-h-screen">
@@ -259,17 +304,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
               )}
               
-              <HistoryTable 
-                records={filteredRecords} 
-                user={user}
-                isClockedIn={isClockedIn}
-                onUpdate={fetchAttendanceData}
-              />
+                <div className="bg-white p-4 sm:p-6 rounded-xl border border-border-color shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h2 className="text-xl font-semibold text-text-primary">
+                            {activeTab === 'attendance' ? 'Attendance History' : 'Idle Time History'}
+                        </h2>
+                        <ClockButtons 
+                            user={user} 
+                            isClockedIn={isClockedIn} 
+                            onUpdate={fetchData}
+                        />
+                    </div>
+                    <div className="border-b border-border-color">
+                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                            <TabButton tabName="attendance" label="Attendance" />
+                            <TabButton tabName="idle" label="Idle Time" />
+                        </nav>
+                    </div>
+                    <div className="mt-4">
+                        {activeTab === 'attendance' ? (
+                            <HistoryTable records={filteredRecords} />
+                        ) : (
+                            <IdleHistoryTable records={filteredIdleRecords} />
+                        )}
+                    </div>
+                </div>
             </>
           )}
         </div>
       </main>
-      <IdleAlarm isActive={isClockedIn} />
+      <IdleAlarm 
+        isActive={isClockedIn}
+        user={user}
+        currentAttendanceId={currentAttendanceId}
+      />
     </div>
   );
 };

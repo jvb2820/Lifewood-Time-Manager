@@ -6,7 +6,8 @@ interface IdleAlarmProps {
 
 const ALARM_INTERVAL_MS = 60 * 1000; // 1 minute
 const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
-const ALARM_SOUND_URL = 'C:\Users\jeuzv\Lifewood-Time-Manager\Public\alarm.mp3';
+// Using the full URL path for the deployed environment
+const ALARM_SOUND_URL = new URL('/alarm.mp3', window.location.origin).href;
 
 const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const [showPopup, setShowPopup] = useState(false);
@@ -17,6 +18,38 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const mainTimerRef = useRef<number | null>(null);
   const snoozeTimeoutRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const [audioLoaded, setAudioLoaded] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  // Initialize audio when component mounts
+  useEffect(() => {
+    const audio = new Audio(ALARM_SOUND_URL);
+    audio.preload = 'auto';
+    audio.loop = true;
+    
+    const handleCanPlayThrough = () => {
+      console.log('Audio loaded and ready to play');
+      setAudioLoaded(true);
+      setAudioError(null);
+    };
+
+    const handleError = (e: ErrorEvent) => {
+      console.error('Audio loading error:', e);
+      setAudioError('Failed to load alarm sound');
+      setAudioLoaded(false);
+    };
+
+    audio.addEventListener('canplaythrough', handleCanPlayThrough);
+    audio.addEventListener('error', handleError);
+    audioRef.current = audio;
+
+    return () => {
+      audio.removeEventListener('canplaythrough', handleCanPlayThrough);
+      audio.removeEventListener('error', handleError);
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
 
   const resetTimers = () => {
     if (mainTimerRef.current) clearTimeout(mainTimerRef.current);
@@ -30,11 +63,21 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
     mainTimerRef.current = window.setTimeout(() => {
       setShowPopup(true);
-      const playPromise = audioRef.current?.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error("Audio playback failed:", error);
-        });
+      
+      if (audioRef.current && audioLoaded) {
+        // Try to play the sound with user interaction context
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.error("Audio playback failed:", error);
+            // If autoplay is blocked, we'll try to play on the next user interaction
+            const handleUserInteraction = () => {
+              audioRef.current?.play().catch(console.error);
+              document.removeEventListener('click', handleUserInteraction);
+            };
+            document.addEventListener('click', handleUserInteraction);
+          });
+        }
       }
 
       snoozeTimeoutRef.current = window.setTimeout(() => {
@@ -102,7 +145,11 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
   return (
     <>
-      <audio ref={audioRef} src={ALARM_SOUND_URL} preload="auto" loop className="hidden" />
+      {audioError && (
+        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-md">
+          {audioError}
+        </div>
+      )}
 
       {showPopup && (
         <>

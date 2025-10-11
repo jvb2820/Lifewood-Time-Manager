@@ -6,50 +6,40 @@ interface IdleAlarmProps {
 
 const ALARM_INTERVAL_MS = 60 * 1000; // 1 minute
 const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
-// Using the full URL path for the deployed environment
-const ALARM_SOUND_URL = new URL('/alarm.mp3', window.location.origin).href;
+
+// Request notification permission when the app starts
+if (typeof window !== 'undefined' && 'Notification' in window) {
+  Notification.requestPermission();
+}
 
 const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const [showPopup, setShowPopup] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [idleTime, setIdleTime] = useState(0);
 
-  const audioRef = useRef<HTMLAudioElement>(null);
   const mainTimerRef = useRef<number | null>(null);
   const snoozeTimeoutRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
-  const [audioLoaded, setAudioLoaded] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
+  const notificationRef = useRef<Notification | null>(null);
 
-  // Initialize audio when component mounts
-  useEffect(() => {
-    const audio = new Audio(ALARM_SOUND_URL);
-    audio.preload = 'auto';
-    audio.loop = true;
-    
-    const handleCanPlayThrough = () => {
-      console.log('Audio loaded and ready to play');
-      setAudioLoaded(true);
-      setAudioError(null);
-    };
-
-    const handleError = (e: ErrorEvent) => {
-      console.error('Audio loading error:', e);
-      setAudioError('Failed to load alarm sound');
-      setAudioLoaded(false);
-    };
-
-    audio.addEventListener('canplaythrough', handleCanPlayThrough);
-    audio.addEventListener('error', handleError);
-    audioRef.current = audio;
-
-    return () => {
-      audio.removeEventListener('canplaythrough', handleCanPlayThrough);
-      audio.removeEventListener('error', handleError);
-      audio.pause();
-      audio.src = '';
-    };
-  }, []);
+  // Function to show notification with stock sound
+  const showNotification = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        // Close any existing notification
+        if (notificationRef.current) {
+          notificationRef.current.close();
+        }
+        // Create a new notification
+        notificationRef.current = new Notification('Idle Alert', {
+          body: 'Are you still there? Click to confirm you\'re working.',
+          icon: '/favicon.ico', // You can add your app's icon here
+          requireInteraction: true, // Notification won't auto-dismiss
+          silent: false // This ensures the default notification sound plays
+        });
+      }
+    }
+  };
 
   const resetTimers = () => {
     if (mainTimerRef.current) clearTimeout(mainTimerRef.current);
@@ -63,22 +53,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
     mainTimerRef.current = window.setTimeout(() => {
       setShowPopup(true);
-      
-      if (audioRef.current && audioLoaded) {
-        // Try to play the sound with user interaction context
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(error => {
-            console.error("Audio playback failed:", error);
-            // If autoplay is blocked, we'll try to play on the next user interaction
-            const handleUserInteraction = () => {
-              audioRef.current?.play().catch(console.error);
-              document.removeEventListener('click', handleUserInteraction);
-            };
-            document.addEventListener('click', handleUserInteraction);
-          });
-        }
-      }
+      showNotification(); // Show notification with stock sound
 
       snoozeTimeoutRef.current = window.setTimeout(() => {
         setIsIdle(true);
@@ -93,9 +68,8 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
       resetTimers();
       setShowPopup(false);
       setIsIdle(false);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
+      if (notificationRef.current) {
+        notificationRef.current.close();
       }
     }
 
@@ -127,9 +101,8 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
   const handleSnooze = () => {
     setShowPopup(false);
     setIsIdle(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+    if (notificationRef.current) {
+      notificationRef.current.close();
     }
     startMainTimer();
   };
@@ -145,12 +118,6 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive }) => {
 
   return (
     <>
-      {audioError && (
-        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-md">
-          {audioError}
-        </div>
-      )}
-
       {showPopup && (
         <>
           <div className="fixed inset-0 bg-black bg-opacity-50 z-40" aria-hidden="true"></div>

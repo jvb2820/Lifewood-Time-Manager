@@ -10,7 +10,7 @@ interface IdleAlarmProps {
   currentAttendanceId: string | null;
 }
 
-const ALARM_INTERVAL_MS = 60 * 1000; // 1 minute
+const ALARM_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
 const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
 
 // Request notification permission when the app starts

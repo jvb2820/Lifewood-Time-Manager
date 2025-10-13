@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import type { User } from '../types';
 import { formatDateForDB, calculateDuration } from '../utils/time';
+import ConfirmationModal from './ConfirmationModal';
 
 interface ClockButtonsProps {
   user: User;
@@ -12,6 +13,7 @@ interface ClockButtonsProps {
 const ClockButtons: React.FC<ClockButtonsProps> = ({ user, isClockedIn, onUpdate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConfirmingClockOut, setIsConfirmingClockOut] = useState(false);
   
   const handleClockIn = async () => {
     setIsLoading(true);
@@ -70,7 +72,13 @@ const ClockButtons: React.FC<ClockButtonsProps> = ({ user, isClockedIn, onUpdate
       console.error(err);
     } finally {
       setIsLoading(false);
+      setIsConfirmingClockOut(false);
     }
+  };
+
+  const openClockOutConfirmation = () => {
+    setError(null);
+    setIsConfirmingClockOut(true);
   };
 
   const ClockButton: React.FC<{onClick: () => void; text: string; className: string; icon: React.ReactElement}> = ({onClick, text, className, icon}) => (
@@ -96,7 +104,7 @@ const ClockButtons: React.FC<ClockButtonsProps> = ({ user, isClockedIn, onUpdate
           />
         ) : (
           <ClockButton 
-            onClick={handleClockOut}
+            onClick={openClockOutConfirmation}
             text="Clock Out"
             className="text-text-primary bg-accent hover:bg-accent-hover"
             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>}
@@ -104,6 +112,16 @@ const ClockButtons: React.FC<ClockButtonsProps> = ({ user, isClockedIn, onUpdate
         )}
       </div>
        {error && <p className="mt-2 text-right text-xs text-red-600">{error}</p>}
+       <ConfirmationModal
+        isOpen={isConfirmingClockOut}
+        onClose={() => setIsConfirmingClockOut(false)}
+        onConfirm={handleClockOut}
+        title="Confirm Clock Out"
+        message="Are you sure you want to clock out? Your current session will be ended."
+        isLoading={isLoading}
+        confirmText="Yes, Clock Out"
+        cancelText="No, Stay In"
+      />
     </div>
   );
 };

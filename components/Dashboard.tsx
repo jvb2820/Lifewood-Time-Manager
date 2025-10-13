@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -9,6 +8,7 @@ import DateFilter from './DateFilter';
 import RealTimeClock from './RealTimeClock';
 import IdleAlarm from './IdleAlarm';
 import ClockButtons from './ClockButtons';
+import ConfirmationModal from './ConfirmationModal';
 import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
@@ -24,6 +24,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isConfirmingSignOut, setIsConfirmingSignOut] = useState(false);
   const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
   const [activeTab, setActiveTab] = useState<'attendance' | 'idle'>('attendance');
 
@@ -172,6 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           console.error("Failed to clock out during sign out:", error);
           setError("Could not clock you out. Please check your connection and try again.");
           setIsLoggingOut(false);
+          setIsConfirmingSignOut(false);
         }
       } else {
         console.warn("isClockedIn is true, but no open record was found. Signing out anyway.");
@@ -235,11 +237,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         </div>
       </div>
       <button
-        onClick={handleSignOut}
+        onClick={() => setIsConfirmingSignOut(true)}
         disabled={isLoggingOut}
         className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-50"
       >
-        {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
+        Sign Out
       </button>
     </header>
   );
@@ -337,6 +339,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         isActive={isClockedIn}
         user={user}
         currentAttendanceId={currentAttendanceId}
+      />
+      <ConfirmationModal
+        isOpen={isConfirmingSignOut}
+        onClose={() => setIsConfirmingSignOut(false)}
+        onConfirm={handleSignOut}
+        title="Confirm Sign Out"
+        message={isClockedIn ? "You are currently clocked in. Signing out will automatically clock you out. Are you sure?" : "Are you sure you want to sign out?"}
+        isLoading={isLoggingOut}
+        confirmText="Yes, Sign Out"
+        cancelText="No, Cancel"
       />
     </div>
   );

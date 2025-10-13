@@ -10,7 +10,7 @@ export const formatDateForDB = (date: Date): string => {
 /**
  * Calculates the duration between two date strings and returns it in HH:MM format.
  */
-export const calculateDuration = (clockInStr: string, clockOutStr: string): string => {
+export const calculateDuration = (clockInStr: string, clockOutStr:string): string => {
   const clockInTime = new Date(clockInStr).getTime();
   const clockOutTime = new Date(clockOutStr).getTime();
 
@@ -62,4 +62,47 @@ export const formatSecondsToHHMMSS = (totalSeconds: number): string => {
   const seconds = Math.floor(totalSeconds % 60);
 
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+/**
+ * Formats total seconds into a human-readable "Xm Ys" string.
+ */
+export const formatSecondsToMinutesSeconds = (totalSeconds: number): string => {
+    if (totalSeconds < 0) return '0m 0s';
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+};
+
+/**
+ * Formats a date string into a localized time string (e.g., "03:30 PM").
+ */
+export const formatDisplayTime = (dateString: string | null): string => {
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+        });
+    } catch (e) {
+        return 'Invalid Time';
+    }
+};
+
+/**
+ * Formats a date string into a localized, detailed date string (e.g., "Wed, Jul 27, 2024").
+ */
+export const formatDisplayDate = (dateString: string | null): string => {
+    if (!dateString) return '';
+    try {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+        });
+    } catch (e) {
+        return '';
+    }
 };

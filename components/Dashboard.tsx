@@ -1,11 +1,14 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import type { User, AttendanceRecord } from '../types';
+import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
 import SummaryCards from './SummaryCards';
 import HistoryTable from './HistoryTable';
+import IdleHistoryTable from './IdleHistoryTable';
 import DateFilter from './DateFilter';
 import RealTimeClock from './RealTimeClock';
 import IdleAlarm from './IdleAlarm';
+import ClockButtons from './ClockButtons';
 import { formatSecondsToHHMMSS, formatDateForDB, calculateDuration, parseDurationToMinutes, formatMinutesToHoursMinutes } from '../utils/time';
 
 interface DashboardProps {
@@ -15,36 +18,48 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [idleRecords, setIdleRecords] = useState<IdleRecord[]>([]);
   const [isClockedIn, setIsClockedIn] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
-  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
+  const [activeTab, setActiveTab] = useState<'attendance' | 'idle'>('attendance');
 
-  const fetchAttendanceData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('user_id', user.userid)
-        .order('created_at', { ascending: false });
-
-      if (dbError) throw dbError;
+      // Fetch both attendance and idle records concurrently
+      const [attendanceRes, idleRes] = await Promise.all([
+        supabase
+          .from('attendance')
+          .select('*')
+          .eq('user_id', user.userid)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('idle_time')
+          .select('*')
+          .eq('user_id', user.userid)
+          .order('created_at', { ascending: false }),
+      ]);
       
-      const safeData = data || [];
-      setRecords(safeData);
+      if (attendanceRes.error) throw attendanceRes.error;
+      if (idleRes.error) throw idleRes.error;
 
-      if (safeData.length > 0) {
-        const latestRecord = safeData[0];
+      const safeAttendanceData = attendanceRes.data || [];
+      setRecords(safeAttendanceData);
+      setIdleRecords(idleRes.data || []);
+
+      if (safeAttendanceData.length > 0) {
+        const latestRecord = safeAttendanceData[0];
         setIsClockedIn(latestRecord.clock_out === null);
       } else {
         setIsClockedIn(false);
       }
     } catch (err: any) {
-      setError('Failed to fetch attendance data. Please try again.');
+      setError('Failed to fetch data. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -52,8 +67,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [user.userid]);
 
   useEffect(() => {
-    fetchAttendanceData();
-  }, [fetchAttendanceData]);
+    fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -94,31 +109,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        // Supabase connection details are hardcoded for this fire-and-forget request.
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
-        // To ensure the request is authenticated and can pass RLS policies,
-        // we need to retrieve the user's access token from localStorage.
-        const sessionKey = 'sb-szifmsvutxcrcwfjbvsi-auth-token';
-        const sessionDataString = localStorage.getItem(sessionKey);
-        let accessToken = supabaseAnonKey; // Fallback to anon key
-
-        if (sessionDataString) {
-          try {
-            const sessionData = JSON.parse(sessionDataString);
-            if (sessionData && sessionData.access_token) {
-              accessToken = sessionData.access_token;
-            }
-          } catch (e) {
-            console.error("Error parsing Supabase session from localStorage.", e);
-          }
-        }
-        
         const headers = {
           'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${accessToken}`, // Use the authenticated user's token
+          'Authorization': `Bearer ${supabaseAnonKey}`, // Use anon key
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
         };
@@ -146,8 +143,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [isClockedIn, records]);
 
   const handleSignOut = async () => {
-    setIsSigningOut(true);
+    setIsLoggingOut(true);
     setError(null);
+
+    const performSignOut = () => {
+      onLogout();
+    };
 
     if (isClockedIn) {
       const openRecord = records.find(r => r.clock_out === null);
@@ -164,25 +165,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             })
             .eq('id', openRecord.id);
 
-          if (updateError) {
-            throw updateError; // Propagate error to the catch block
-          }
-          // If clock-out is successful, proceed to logout.
-          onLogout();
+          if (updateError) throw updateError;
+          performSignOut();
 
         } catch (error) {
           console.error("Failed to clock out during sign out:", error);
           setError("Could not clock you out. Please check your connection and try again.");
-          setIsSigningOut(false); // Allow user to try again
+          setIsLoggingOut(false);
         }
       } else {
-        // This is an inconsistent state, but we should let the user log out.
-        console.warn("isClockedIn is true, but no open record was found. Logging out anyway.");
-        onLogout();
+        console.warn("isClockedIn is true, but no open record was found. Signing out anyway.");
+        performSignOut();
       }
     } else {
-      // Not clocked in, so just log out.
-      onLogout();
+      performSignOut();
     }
   };
 
@@ -190,12 +186,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     if (!filterDate) { // filterDate is 'YYYY-MM-DD'
       return records;
     }
-
-    // Construct a date range for the selected day in the user's local timezone
-    // to avoid timezone-related issues.
     const [year, month, day] = filterDate.split('-').map(Number);
-    
-    // Month is 0-indexed in JS Date constructor (0-11)
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
@@ -205,15 +196,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     });
   }, [records, filterDate]);
 
+  const filteredIdleRecords = useMemo(() => {
+    if (!filterDate) {
+      return idleRecords;
+    }
+    const [year, month, day] = filterDate.split('-').map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    return idleRecords.filter(record => {
+      const recordDate = new Date(record.idle_start);
+      return recordDate >= startOfDay && recordDate <= endOfDay;
+    });
+  }, [idleRecords, filterDate]);
+
+
   const filteredDateSummary = useMemo(() => {
     if (!filterDate) return null;
-
     const totalMinutes = filteredRecords.reduce((acc, record) => {
       return acc + parseDurationToMinutes(record.total_time);
     }, 0);
-
     return formatMinutesToHoursMinutes(totalMinutes);
   }, [filteredRecords, filterDate]);
+
+  const currentAttendanceId = useMemo(() => {
+    if (!isClockedIn) return null;
+    const openRecord = records.find(r => r.clock_out === null);
+    return openRecord ? openRecord.id : null;
+  }, [isClockedIn, records]);
 
   const Header = () => (
     <header className="flex items-center justify-between p-4 bg-white border-b border-border-color shadow-sm sticky top-0 z-10">
@@ -226,13 +236,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </div>
       <button
         onClick={handleSignOut}
-        disabled={isSigningOut}
+        disabled={isLoggingOut}
         className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-50"
       >
-        {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+        {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
       </button>
     </header>
   );
+
+  const TabButton: React.FC<{tabName: 'attendance' | 'idle', label: string}> = ({tabName, label}) => {
+    const isActive = activeTab === tabName;
+    return (
+        <button
+            onClick={() => setActiveTab(tabName)}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-md transition-colors focus:outline-none ${
+                isActive 
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+            aria-current={isActive ? 'page' : undefined}
+        >
+            {label}
+        </button>
+    )
+  }
 
   return (
     <div className="min-h-screen">
@@ -277,17 +304,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
               )}
               
-              <HistoryTable 
-                records={filteredRecords} 
-                user={user}
-                isClockedIn={isClockedIn}
-                onUpdate={fetchAttendanceData}
-              />
+                <div className="bg-white p-4 sm:p-6 rounded-xl border border-border-color shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h2 className="text-xl font-semibold text-text-primary">
+                            {activeTab === 'attendance' ? 'Attendance History' : 'Idle Time History'}
+                        </h2>
+                        <ClockButtons 
+                            user={user} 
+                            isClockedIn={isClockedIn} 
+                            onUpdate={fetchData}
+                        />
+                    </div>
+                    <div className="border-b border-border-color">
+                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                            <TabButton tabName="attendance" label="Attendance" />
+                            <TabButton tabName="idle" label="Idle Time" />
+                        </nav>
+                    </div>
+                    <div className="mt-4">
+                        {activeTab === 'attendance' ? (
+                            <HistoryTable records={filteredRecords} />
+                        ) : (
+                            <IdleHistoryTable records={filteredIdleRecords} />
+                        )}
+                    </div>
+                </div>
             </>
           )}
         </div>
       </main>
-      <IdleAlarm isActive={isClockedIn} />
+      <IdleAlarm 
+        isActive={isClockedIn}
+        user={user}
+        currentAttendanceId={currentAttendanceId}
+      />
     </div>
   );
 };

@@ -127,8 +127,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = 'https://szifmsvutxcrcwfjbvsi.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6aWZtc3Z1dHhjcmN3ZmpidnNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjcwNzEsImV4cCI6MjA3NTYwMzA3MX0.hvZKMI0NDQ8IdWaDonqmiyvQu-NkCN0nRHPjn0isoCA';
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
         const headers = {
@@ -201,6 +201,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
   
+  const handleForceClockOut = async (note: string) => {
+    const openRecord = records.find(r => r.clock_out === null);
+    if (!openRecord) {
+        console.warn("Attempted to force clock out, but no open record was found.");
+        return;
+    }
+    
+    setError(null);
+    try {
+        const clockOutTime = formatDateForDB(new Date());
+        const totalTime = calculateDuration(openRecord.clock_in, clockOutTime);
+
+        const { error: updateError } = await supabase
+            .from('attendance')
+            .update({
+              clock_out: clockOutTime,
+              total_time: totalTime,
+              notes: note.trim(),
+            })
+            .eq('id', openRecord.id);
+            
+        if (updateError) throw updateError;
+        
+        // After successfully clocking out, refresh all data
+        await fetchData();
+
+    } catch (err: any) {
+        const message = (err && typeof (err as any).message === 'string')
+            ? (err as any).message
+            : 'An unexpected error occurred during automatic clock-out.';
+        setError(message);
+        console.error(err);
+    }
+  };
+
   const filterRecordsByDateRange = <T extends { clock_in?: string; idle_start?: string }>(recordsToFilter: T[], dateRange: { start: string; end: string }): T[] => {
     const { start, end } = dateRange;
     if (!start && !end) {
@@ -379,6 +414,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         isActive={isClockedIn}
         user={user}
         currentAttendanceId={currentAttendanceId}
+        onForceClockOut={handleForceClockOut}
       />
       <ConfirmationModal
         isOpen={isConfirmingSignOut}

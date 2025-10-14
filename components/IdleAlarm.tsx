@@ -8,25 +8,31 @@ interface IdleAlarmProps {
   isActive: boolean; // Control whether the alarm is running
   user: User | null;
   currentAttendanceId: string | null;
+  onForceClockOut: (note: string) => Promise<void>;
 }
 
-const ALARM_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+const ALARM_INTERVAL_MS = 1 * 60 * 1000; // 20 minutes
 const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
+const AUTO_CLOCK_OUT_DURATION_MS = 1 * 60 * 1000; // 20 minutes of being idle
 
 // Request notification permission when the app starts
 if (typeof window !== 'undefined' && 'Notification' in window) {
   Notification.requestPermission();
 }
 
-const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendanceId }) => {
+const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendanceId, onForceClockOut }) => {
   const [showPopup, setShowPopup] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [idleTime, setIdleTime] = useState(0);
+  const [autoClockOutTimeLeft, setAutoClockOutTimeLeft] = useState(AUTO_CLOCK_OUT_DURATION_MS / 1000);
+  const [isAutoClockingOut, setIsAutoClockingOut] = useState(false);
   const [currentIdleRecordId, setCurrentIdleRecordId] = useState<string | null>(null);
 
   const mainTimerRef = useRef<number | null>(null);
   const snoozeTimeoutRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const autoClockOutTimerRef = useRef<number | null>(null);
+  const autoClockOutIntervalRef = useRef<number | null>(null);
   const notificationRef = useRef<Notification | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundIntervalRef = useRef<number | null>(null);
@@ -154,6 +160,8 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
     if (mainTimerRef.current) clearTimeout(mainTimerRef.current);
     if (snoozeTimeoutRef.current) clearTimeout(snoozeTimeoutRef.current);
     if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    if (autoClockOutTimerRef.current) clearTimeout(autoClockOutTimerRef.current);
+    if (autoClockOutIntervalRef.current) clearInterval(autoClockOutIntervalRef.current);
   };
 
   const startMainTimer = () => {
@@ -183,11 +191,21 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
                 setCurrentIdleRecordId(data.id);
             }
         }
+        
+        startRepeatingRing();
 
-        if (audioContextRef.current?.state === 'suspended') {
-          try { await audioContextRef.current.resume(); } catch (e) { console.error('Failed to resume audio context:', e); }
-        }
-        startRepeatingRing(); // Start the ringing sound when user becomes idle
+        setAutoClockOutTimeLeft(AUTO_CLOCK_OUT_DURATION_MS / 1000);
+        autoClockOutIntervalRef.current = window.setInterval(() => {
+          setAutoClockOutTimeLeft(prev => prev > 0 ? prev - 1 : 0);
+        }, 1000);
+
+        autoClockOutTimerRef.current = window.setTimeout(async () => {
+          setIsAutoClockingOut(true);
+          await onForceClockOut('Automatically clocked out due to prolonged inactivity.');
+          setShowPopup(false);
+          setIsIdle(false);
+          stopRepeatingRing();
+        }, AUTO_CLOCK_OUT_DURATION_MS);
       }, SNOOZE_WINDOW_MS);
     }, ALARM_INTERVAL_MS);
   };
@@ -245,6 +263,9 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
         }
         setCurrentIdleRecordId(null);
     }
+    if (autoClockOutTimerRef.current) clearTimeout(autoClockOutTimerRef.current);
+    if (autoClockOutIntervalRef.current) clearInterval(autoClockOutIntervalRef.current);
+
     setShowPopup(false);
     setIsIdle(false);
     if (notificationRef.current) {
@@ -261,6 +282,13 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes} min ${remainingSeconds} sec`;
+  };
+
+  const formatAutoClockOutTime = (seconds: number): string => {
+    if (seconds < 0) seconds = 0;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   return (
@@ -295,12 +323,19 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
                   <h2 id="idle-alarm-title" className="text-2xl font-bold text-red-600">
                     You are now idle
                   </h2>
-                  <p className="mt-2 text-text-secondary">
+                   <p className="mt-2 text-text-secondary">
                     Your session is currently marked as idle.
                   </p>
                   <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800">Idle Time</p>
                     <span className="font-mono text-xl text-red-700 tracking-wider">
                       {formatIdleTime(idleTime)}
+                    </span>
+                  </div>
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">Auto clock-out in</p>
+                    <span className="font-mono text-xl text-yellow-700 tracking-wider">
+                      {formatAutoClockOutTime(autoClockOutTimeLeft)}
                     </span>
                   </div>
                 </>
@@ -309,9 +344,14 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
               <div className="mt-8">
                 <button
                   onClick={handleSnooze}
-                  className="w-full sm:w-auto inline-flex justify-center rounded-md border border-transparent bg-primary px-8 py-3 text-base font-bold text-white shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-transform transform hover:scale-105"
+                  disabled={isAutoClockingOut}
+                  className="w-full sm:w-auto inline-flex justify-center rounded-md border border-transparent bg-primary px-8 py-3 text-base font-bold text-white shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-transform transform hover:scale-105 disabled:opacity-50"
                 >
-                  I'm Here
+                  {isAutoClockingOut ? (
+                     <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    "I'm Here"
+                  )}
                 </button>
               </div>
             </div>

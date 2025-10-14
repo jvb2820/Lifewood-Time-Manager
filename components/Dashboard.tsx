@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -98,6 +97,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [isClockedIn, records]);
 
   useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (isClockedIn) {
+        const message = 'You are currently clocked in. Refreshing or closing this page will automatically clock you out. Are you sure you want to continue?';
+        event.preventDefault();
+        event.returnValue = message; // For legacy browsers
+        return message; // For modern browsers
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isClockedIn]);
+
+  useEffect(() => {
     const handlePageHide = () => {
       if (isClockedIn) {
         const openRecord = records.find(r => r.clock_out === null);
@@ -111,8 +127,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = 'https://szifmsvutxcrcwfjbvsi.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6aWZtc3Z1dHhjcmN3ZmpidnNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjcwNzEsImV4cCI6MjA3NTYwMzA3MX0.hvZKMI0NDQ8IdWaDonqmiyvQu-NkCN0nRHPjn0isoCA';
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
         const headers = {
@@ -369,10 +385,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         onClose={() => setIsConfirmingSignOut(false)}
         onConfirm={handleSignOut}
         title="Confirm Sign Out"
-        message={isClockedIn ? "You are currently clocked in. Signing out will automatically clock you out. Are you sure?" : "Are you sure you want to sign out?"}
+        message={isClockedIn ? "You are currently clocked in and will be clocked out. Are you sure you want to sign out?" : "Are you sure you want to sign out?"}
         isLoading={isLoggingOut}
         confirmText="Yes, Sign Out"
-        cancelText="No, Cancel"
+        cancelText="Cancel"
+        intent="destructive"
       />
     </div>
   );

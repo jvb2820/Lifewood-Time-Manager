@@ -19,6 +19,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ records }) => {
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Clock In</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Clock Out</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Total Time</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">Notes</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-border-color">
@@ -28,6 +29,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ records }) => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary font-semibold">{formatDisplayTime(record.clock_in)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary font-semibold">{record.clock_out ? formatDisplayTime(record.clock_out) : <span className="text-text-secondary italic">In Progress...</span>}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-primary">{record.total_time || '...'}</td>
+                <td className="px-6 py-4 whitespace-pre-wrap text-sm text-text-secondary max-w-xs break-words">{record.notes || ''}</td>
               </tr>
             ))}
           </tbody>

@@ -11,9 +11,9 @@ interface IdleAlarmProps {
   onForceClockOut: (note: string) => Promise<void>;
 }
 
-const ALARM_INTERVAL_MS = 20* 60 * 1000; // 20 minutes
+const ALARM_INTERVAL_MS = 30 * 1000; // 20 minutes
 const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
-const AUTO_CLOCK_OUT_DURATION_MS = 20 * 60 * 1000; // 20 minutes of being idle
+const AUTO_CLOCK_OUT_DURATION_MS = 30 * 1000; // 20 minutes of being idle
 
 // Request notification permission when the app starts
 if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -201,6 +201,22 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
 
         autoClockOutTimerRef.current = window.setTimeout(async () => {
           setIsAutoClockingOut(true);
+
+          if (currentIdleRecordId) {
+            const { error } = await supabase
+                .from('idle_time')
+                .update({
+                    idle_end: formatDateForDB(new Date()),
+                    duration_seconds: idleTime,
+                })
+                .eq('id', currentIdleRecordId);
+            
+            if (error) {
+                console.error("Failed to update idle record on auto clock-out:", error);
+            }
+            setCurrentIdleRecordId(null);
+          }
+
           await onForceClockOut('Automatically clocked out due to prolonged inactivity.');
           setShowPopup(false);
           setIsIdle(false);

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -25,7 +26,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isConfirmingSignOut, setIsConfirmingSignOut] = useState(false);
-  const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD format
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [activeTab, setActiveTab] = useState<'attendance' | 'idle'>('attendance');
 
   const fetchData = useCallback(async () => {
@@ -110,8 +111,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           total_time: totalTime,
         };
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = 'https://szifmsvutxcrcwfjbvsi.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6aWZtc3Z1dHhjcmN3ZmpidnNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjcwNzEsImV4cCI6MjA3NTYwMzA3MX0.hvZKMI0NDQ8IdWaDonqmiyvQu-NkCN0nRHPjn0isoCA';
         const updateUrl = `${supabaseUrl}/rest/v1/attendance?id=eq.${openRecord.id}`;
         
         const headers = {
@@ -183,43 +184,66 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       performSignOut();
     }
   };
+  
+  const filterRecordsByDateRange = <T extends { clock_in?: string; idle_start?: string }>(recordsToFilter: T[], dateRange: { start: string; end: string }): T[] => {
+    const { start, end } = dateRange;
+    if (!start && !end) {
+      return recordsToFilter;
+    }
+
+    let startDate: Date | null = null;
+    if (start) {
+        const [year, month, day] = start.split('-').map(Number);
+        startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    }
+    
+    let endDate: Date | null = null;
+    if (end) {
+        const [year, month, day] = end.split('-').map(Number);
+        endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+    }
+
+    return recordsToFilter.filter(record => {
+      const recordDateStr = record.clock_in || record.idle_start;
+      if (!recordDateStr) return false;
+
+      const recordDate = new Date(recordDateStr);
+      const isAfterStart = startDate ? recordDate >= startDate : true;
+      const isBeforeEnd = endDate ? recordDate <= endDate : true;
+      return isAfterStart && isBeforeEnd;
+    });
+  };
 
   const filteredRecords = useMemo(() => {
-    if (!filterDate) { // filterDate is 'YYYY-MM-DD'
-      return records;
-    }
-    const [year, month, day] = filterDate.split('-').map(Number);
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
-
-    return records.filter(record => {
-      const recordDate = new Date(record.clock_in);
-      return recordDate >= startOfDay && recordDate <= endOfDay;
-    });
-  }, [records, filterDate]);
+    return filterRecordsByDateRange<AttendanceRecord>(records, dateRange);
+  }, [records, dateRange]);
 
   const filteredIdleRecords = useMemo(() => {
-    if (!filterDate) {
-      return idleRecords;
-    }
-    const [year, month, day] = filterDate.split('-').map(Number);
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
-
-    return idleRecords.filter(record => {
-      const recordDate = new Date(record.idle_start);
-      return recordDate >= startOfDay && recordDate <= endOfDay;
-    });
-  }, [idleRecords, filterDate]);
+     return filterRecordsByDateRange<IdleRecord>(idleRecords, dateRange);
+  }, [idleRecords, dateRange]);
 
 
   const filteredDateSummary = useMemo(() => {
-    if (!filterDate) return null;
+    if (!dateRange.start && !dateRange.end) return null;
     const totalMinutes = filteredRecords.reduce((acc, record) => {
       return acc + parseDurationToMinutes(record.total_time);
     }, 0);
     return formatMinutesToHoursMinutes(totalMinutes);
-  }, [filteredRecords, filterDate]);
+  }, [filteredRecords, dateRange]);
+
+  const formatDateRangeForDisplay = (start: string, end: string): string => {
+    const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' };
+    const startDate = start ? new Date(start).toLocaleDateString('en-US', options) : null;
+    const endDate = end ? new Date(end).toLocaleDateString('en-US', options) : null;
+
+    if (startDate && endDate) {
+        if (startDate === endDate) return startDate;
+        return `${startDate} to ${endDate}`;
+    }
+    if (startDate) return `from ${startDate}`;
+    if (endDate) return `until ${endDate}`;
+    return 'the selected period';
+  }
 
   const currentAttendanceId = useMemo(() => {
     if (!isClockedIn) return null;
@@ -287,19 +311,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               </div>
 
               <DateFilter 
-                selectedDate={filterDate}
-                onDateChange={setFilterDate}
-                onClear={() => setFilterDate('')}
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                onClear={() => setDateRange({ start: '', end: '' })}
               />
 
-              {filterDate && (
+              {(dateRange.start || dateRange.end) && (
                 <div className="bg-white p-6 rounded-xl border border-primary-hover shadow-lg flex items-center space-x-4">
                      <div className="p-3 rounded-full bg-icon-bg">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                      </div>
                      <div>
                         <p className="text-text-secondary text-sm">
-                            Total time for {new Date(filterDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}
+                            Total time for {formatDateRangeForDisplay(dateRange.start, dateRange.end)}
                         </p>
                         <p className="text-2xl font-bold text-text-primary">{filteredDateSummary}</p>
                      </div>

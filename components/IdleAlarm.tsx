@@ -176,6 +176,10 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
       snoozeTimeoutRef.current = window.setTimeout(async () => {
         setIsIdle(true);
         idleStartTimeRef.current = new Date();
+        
+        // Use a local variable to pass the new ID to the timeout closure
+        let newIdleRecordId: string | null = null;
+        
         if (user && currentAttendanceId) {
             const { data, error } = await supabase
               .from('idle_time')
@@ -191,6 +195,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
                 console.error("Failed to log idle start:", error);
             } else if (data) {
                 setCurrentIdleRecordId(data.id);
+                newIdleRecordId = data.id; // Capture the ID
             }
         }
         
@@ -204,20 +209,21 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
         autoClockOutTimerRef.current = window.setTimeout(async () => {
           setIsAutoClockingOut(true);
 
-          if (currentIdleRecordId) {
+          if (newIdleRecordId) {
             const idleEndTime = new Date();
             let duration = 0;
             if (idleStartTimeRef.current) {
                 duration = Math.round((idleEndTime.getTime() - idleStartTimeRef.current.getTime()) / 1000);
             }
 
+            // Await the update to ensure it completes before clocking out
             const { error } = await supabase
                 .from('idle_time')
                 .update({
                     idle_end: formatDateForDB(idleEndTime),
                     duration_seconds: duration,
                 })
-                .eq('id', currentIdleRecordId);
+                .eq('id', newIdleRecordId);
             
             if (error) {
                 console.error("Failed to update idle record on auto clock-out:", error);

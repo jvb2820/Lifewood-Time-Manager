@@ -36,6 +36,7 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
   const notificationRef = useRef<Notification | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundIntervalRef = useRef<number | null>(null);
+  const idleStartTimeRef = useRef<Date | null>(null);
 
   // Function to play a ringing sound
   const playRingingSound = async () => {
@@ -174,13 +175,14 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
 
       snoozeTimeoutRef.current = window.setTimeout(async () => {
         setIsIdle(true);
+        idleStartTimeRef.current = new Date();
         if (user && currentAttendanceId) {
             const { data, error } = await supabase
               .from('idle_time')
               .insert({
                 user_id: user.userid,
                 attendance_id: currentAttendanceId,
-                idle_start: formatDateForDB(new Date()),
+                idle_start: formatDateForDB(idleStartTimeRef.current),
               })
               .select()
               .single();
@@ -203,11 +205,17 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
           setIsAutoClockingOut(true);
 
           if (currentIdleRecordId) {
+            const idleEndTime = new Date();
+            let duration = 0;
+            if (idleStartTimeRef.current) {
+                duration = Math.round((idleEndTime.getTime() - idleStartTimeRef.current.getTime()) / 1000);
+            }
+
             const { error } = await supabase
                 .from('idle_time')
                 .update({
-                    idle_end: formatDateForDB(new Date()),
-                    duration_seconds: idleTime,
+                    idle_end: formatDateForDB(idleEndTime),
+                    duration_seconds: duration,
                 })
                 .eq('id', currentIdleRecordId);
             
@@ -266,11 +274,17 @@ const IdleAlarm: React.FC<IdleAlarmProps> = ({ isActive, user, currentAttendance
 
   const handleSnooze = async () => {
     if (isIdle && currentIdleRecordId) {
+        const idleEndTime = new Date();
+        let duration = idleTime; // Fallback
+        if (idleStartTimeRef.current) {
+            duration = Math.round((idleEndTime.getTime() - idleStartTimeRef.current.getTime()) / 1000);
+        }
+
         const { error } = await supabase
             .from('idle_time')
             .update({
-                idle_end: formatDateForDB(new Date()),
-                duration_seconds: idleTime,
+                idle_end: formatDateForDB(idleEndTime),
+                duration_seconds: duration,
             })
             .eq('id', currentIdleRecordId);
         

@@ -16,7 +16,8 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 15 * 1000; // 5 minutes
+const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const SYSTEM_INTERRUPTION_NOTE = 'system clock out due to interruption';
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -129,6 +130,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         const payload = {
           clock_out: clockOutTime,
           total_time: totalTime,
+          notes: SYSTEM_INTERRUPTION_NOTE,
         };
 
         const supabaseUrl = 'https://szifmsvutxcrcwfjbvsi.supabase.co';
@@ -184,6 +186,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             .update({
               clock_out: clockOutTime,
               total_time: totalTime,
+              notes: SYSTEM_INTERRUPTION_NOTE,
             })
             .eq('id', openRecord.id);
 
@@ -250,7 +253,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             if (offlineDuration >= OFFLINE_CLOCK_OUT_THRESHOLD_MS) {
                 console.log(`Offline for ${offlineDuration / 1000}s. Auto-clocking out.`);
                 handleForceClockOut(
-                    'Automatically clocked out after prolonged network disconnection.',
+                    SYSTEM_INTERRUPTION_NOTE,
                     offlineSinceRef.current // Use the time when connection was lost
                 );
             }

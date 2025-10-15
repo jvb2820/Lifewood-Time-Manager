@@ -17,7 +17,7 @@ interface DashboardProps {
 }
 
 const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-const SYSTEM_INTERRUPTION_NOTE = 'system clock out due to interruption';
+const SYSTEM_INTERRUPTION_NOTE = 'System clock out due to interruption';
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);

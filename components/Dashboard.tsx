@@ -16,7 +16,7 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 15 * 1000; // 5 minutes
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);

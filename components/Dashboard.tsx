@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { User, AttendanceRecord, IdleRecord } from '../types';
 import { supabase } from '../services/supabaseClient';
 import SummaryCards from './SummaryCards';
@@ -16,6 +16,8 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
+const OFFLINE_CLOCK_OUT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [idleRecords, setIdleRecords] = useState<IdleRecord[]>([]);
@@ -27,6 +29,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isConfirmingSignOut, setIsConfirmingSignOut] = useState(false);
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [activeTab, setActiveTab] = useState<'attendance' | 'idle'>('attendance');
+  const [showOfflineWarning, setShowOfflineWarning] = useState<boolean>(false);
+  const offlineSinceRef = useRef<Date | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -201,7 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
   
-  const handleForceClockOut = async (note: string) => {
+  const handleForceClockOut = async (note: string, clockOutDate: Date = new Date()) => {
     const openRecord = records.find(r => r.clock_out === null);
     if (!openRecord) {
         console.warn("Attempted to force clock out, but no open record was found.");
@@ -210,7 +214,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     
     setError(null);
     try {
-        const clockOutTime = formatDateForDB(new Date());
+        const clockOutTime = formatDateForDB(clockOutDate);
         const totalTime = calculateDuration(openRecord.clock_in, clockOutTime);
 
         const { error: updateError } = await supabase
@@ -235,6 +239,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         console.error(err);
     }
   };
+
+  // Effect to handle online/offline status for automatic clock-out
+  useEffect(() => {
+    const handleOnline = () => {
+        setShowOfflineWarning(false);
+        
+        if (offlineSinceRef.current && isClockedIn) {
+            const offlineDuration = new Date().getTime() - offlineSinceRef.current.getTime();
+            if (offlineDuration >= OFFLINE_CLOCK_OUT_THRESHOLD_MS) {
+                console.log(`Offline for ${offlineDuration / 1000}s. Auto-clocking out.`);
+                handleForceClockOut(
+                    'Automatically clocked out after prolonged network disconnection.',
+                    offlineSinceRef.current // Use the time when connection was lost
+                );
+            }
+        }
+        // Always reset the ref on reconnection
+        offlineSinceRef.current = null;
+    };
+
+    const handleOffline = () => {
+        if (isClockedIn) {
+            setShowOfflineWarning(true);
+            // Only set the timestamp if it's the first time we've detected being offline
+            if (!offlineSinceRef.current) {
+                offlineSinceRef.current = new Date();
+                console.log('Connection lost, started offline timer at:', offlineSinceRef.current);
+            }
+        }
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial check in case the app loads while offline
+    if (!navigator.onLine) {
+        handleOffline();
+    }
+    
+    return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
+  }, [isClockedIn, fetchData]);
+
 
   const filterRecordsByDateRange = <T extends { clock_in?: string; idle_start?: string }>(recordsToFilter: T[], dateRange: { start: string; end: string }): T[] => {
     const { start, end } = dateRange;
@@ -344,6 +393,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-8">
           
+          {showOfflineWarning && (
+            <div className="p-4 text-center text-amber-800 bg-amber-100 border border-amber-200 rounded-lg flex items-center justify-center space-x-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span>
+                    Connection lost. If you remain offline for over 5 minutes, you will be automatically clocked out.
+                </span>
+            </div>
+          )}
           {error && <div className="p-4 text-center text-red-700 bg-red-100 border border-red-200 rounded-lg">{error}</div>}
 
           {isLoading ? (

@@ -12,7 +12,7 @@ interface IdleAlarmProps {
 }
 
 const ALARM_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
-const SNOOZE_WINDOW_MS = 10 * 1000; // 10 seconds
+const SNOOZE_WINDOW_MS = 3 * 1000; // 10 seconds
 const AUTO_CLOCK_OUT_DURATION_MS = 20 * 60 * 1000; // 20 minutes of being idle
 
 // Request notification permission when the app starts
